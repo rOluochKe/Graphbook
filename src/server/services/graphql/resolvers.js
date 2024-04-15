@@ -1,4 +1,6 @@
 import logger from "../../helpers/logger";
+import Sequelize from "sequelize";
+const Op = Sequelize.Op;
 
 export default function resolver() {
   const { db } = this;
@@ -19,6 +21,16 @@ export default function resolver() {
       },
     },
     Chat: {
+      lastMessage(chat, args, context) {
+        return chat
+          .getMessages({
+            limit: 1,
+            order: [["id", "DESC"]],
+          })
+          .then((message) => {
+            return message[0];
+          });
+      },
       messages(chat, args, context) {
         return chat.getMessages({
           order: [["id", "ASC"]],
@@ -29,6 +41,52 @@ export default function resolver() {
       },
     },
     RootQuery: {
+      usersSearch(root, { page, limit, text }, context) {
+        if (text.length < 3) {
+          return {
+            users: [],
+          };
+        }
+        var skip = 0;
+        if (page && limit) {
+          skip = page * limit;
+        }
+        var query = {
+          order: [["createdAt", "DESC"]],
+          offset: skip,
+        };
+        if (limit) {
+          query.limit = limit;
+        }
+        query.where = {
+          username: {
+            [Op.like]: "%" + text + "%",
+          },
+        };
+        return {
+          users: User.findAll(query),
+        };
+      },
+      postsFeed(root, { page, limit }, context) {
+        var skip = 0;
+
+        if (page && limit) {
+          skip = page * limit;
+        }
+
+        var query = {
+          order: [["createdAt", "DESC"]],
+          offset: skip,
+        };
+
+        if (limit) {
+          query.limit = limit;
+        }
+
+        return {
+          posts: Post.findAll(query),
+        };
+      },
       posts(root, args, context) {
         return Post.findAll({
           order: [["createdAt", "DESC"]],
@@ -122,6 +180,34 @@ export default function resolver() {
             });
           });
         });
+      },
+      deletePost(root, { postId }, context) {
+        return Post.destroy({
+          where: {
+            id: postId,
+          },
+        }).then(
+          function (rows) {
+            if (rows === 1) {
+              logger.log({
+                level: "info",
+                message: "Post " + postId + "was deleted",
+              });
+              return {
+                success: true,
+              };
+            }
+            return {
+              success: false,
+            };
+          },
+          function (err) {
+            logger.log({
+              level: "error",
+              message: err.message,
+            });
+          }
+        );
       },
     },
   };
