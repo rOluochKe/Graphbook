@@ -1,5 +1,13 @@
 import logger from "../../helpers/logger";
 import Sequelize from "sequelize";
+import bcrypt from "bcrypt";
+import JWT from "jsonwebtoken";
+import { GraphQLUpload } from "graphql-upload";
+import aws from "aws-sdk";
+const s3 = new aws.S3({
+  signatureVersion: "v4",
+  region: "eu-central-1",
+});
 const Op = Sequelize.Op;
 
 export default function resolver() {
@@ -7,6 +15,7 @@ export default function resolver() {
   const { Post, User, Chat, Message } = db.models;
 
   const resolvers = {
+    Upload: GraphQLUpload,
     Post: {
       user(post, args, context) {
         return post.getUser();
@@ -67,7 +76,14 @@ export default function resolver() {
           users: User.findAll(query),
         };
       },
-      postsFeed(root, { page, limit }, context) {
+      user(root, { username }, context) {
+        return User.findOne({
+          where: {
+            username,
+          },
+        });
+      },
+      postsFeed(root, { page, limit, username }, context) {
         var skip = 0;
 
         if (page && limit) {
@@ -83,6 +99,17 @@ export default function resolver() {
           query.limit = limit;
         }
 
+        if (username) {
+          query.include = [
+            {
+              model: User,
+            },
+          ];
+          query.where = {
+            "$User.username$": username,
+          };
+        }
+
         return {
           posts: Post.findAll(query),
         };
@@ -93,29 +120,21 @@ export default function resolver() {
         });
       },
       chats(root, args, context) {
-        return User.findAll().then((users) => {
-          if (!users.length) {
-            return [];
-          }
-
-          const usersRow = users[0];
-
-          return Chat.findAll({
-            include: [
-              {
-                model: User,
-                required: true,
-                through: {
-                  where: {
-                    userId: usersRow.id,
-                  },
+        return Chat.findAll({
+          include: [
+            {
+              model: User,
+              required: true,
+              through: {
+                where: {
+                  userId: context.user.id,
                 },
               },
-              {
-                model: Message,
-              },
-            ],
-          });
+            },
+            {
+              model: Message,
+            },
+          ],
         });
       },
       chat(root, { chatId }, context) {
@@ -131,8 +150,85 @@ export default function resolver() {
           ],
         });
       },
+      currentUser(root, args, context) {
+        return context.user;
+      },
     },
     RootMutation: {
+      signup(root, { email, password, username }, context) {
+        return User.findAll({
+          where: {
+            [Op.or]: [
+              {
+                email,
+              },
+              {
+                username,
+              },
+            ],
+          },
+          raw: true,
+        }).then(async (users) => {
+          if (users.length) {
+            throw new Error("User already exists");
+          } else {
+            return bcrypt.hash(password, 10).then((hash) => {
+              return User.create({
+                email,
+                password: hash,
+                username,
+                activated: 1,
+              }).then((newUser) => {
+                const token = JWT.sign(
+                  {
+                    email,
+                    id: newUser.id,
+                  },
+                  process.env.JWT_SECRET,
+                  {
+                    expiresIn: "1d",
+                  }
+                );
+                return {
+                  token,
+                };
+              });
+            });
+          }
+        });
+      },
+      login(root, { email, password }, context) {
+        return User.findAll({
+          where: {
+            email,
+          },
+          raw: true,
+        }).then(async (users) => {
+          if ((users.length = 1)) {
+            const user = users[0];
+            const passwordValid = await bcrypt.compare(password, user.password);
+            if (!passwordValid) {
+              throw new Error("Password does not match");
+            }
+            const token = JWT.sign(
+              {
+                email,
+                id: user.id,
+              },
+              process.env.JWT_SECRET,
+              {
+                expiresIn: "1d",
+              }
+            );
+
+            return {
+              token,
+            };
+          } else {
+            throw new Error("User not found");
+          }
+        });
+      },
       addChat(root, { chat }, context) {
         return Chat.create().then((newChat) => {
           return Promise.all([newChat.setUsers(chat.users)]).then(() => {
@@ -162,6 +258,34 @@ export default function resolver() {
               return newMessage;
             });
           });
+        });
+      },
+      async uploadAvatar(root, { file }, context) {
+        const { createReadStream, filename, mimetype, encoding } = await file;
+        const bucket = "apollo-book";
+        const params = {
+          Bucket: bucket,
+          Key: context.user.id + "/" + filename,
+          ACL: "public-read",
+          Body: createReadStream(),
+        };
+
+        const response = await s3.upload(params).promise();
+
+        return User.update(
+          {
+            avatar: response.Location,
+          },
+          {
+            where: {
+              id: context.user.id,
+            },
+          }
+        ).then(() => {
+          return {
+            filename: filename,
+            url: response.Location,
+          };
         });
       },
       addPost(root, { post }, context) {

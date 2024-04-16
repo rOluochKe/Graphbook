@@ -1,6 +1,5 @@
-import { gql } from "@apollo/client";
+import { gql, useQuery } from "@apollo/client";
 import { USER_ATTRIBUTES } from "../fragments/userAttributes";
-import { useQuery } from "@apollo/client";
 
 export const GET_USERS = gql`
   query usersSearch($page: Int, $limit: Int, $text: String!) {
