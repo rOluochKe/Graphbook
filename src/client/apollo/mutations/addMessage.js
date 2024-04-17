@@ -13,6 +13,13 @@ export const ADD_MESSAGE = gql`
   }
 `;
 
+export const NEW_MESSAGE = gql`
+  fragment NewMessage on Chat {
+    id
+    type
+  }
+`;
+
 export const getAddMessageConfig = (data) => ({
   update(cache, { data: { addMessage } }) {
     cache.modify({
@@ -21,12 +28,7 @@ export const getAddMessageConfig = (data) => ({
         messages(existingMessages = []) {
           const newMessageRef = cache.writeFragment({
             data: addMessage,
-            fragment: gql`
-              fragment NewMessage on Chat {
-                id
-                type
-              }
-            `,
+            fragment: NEW_MESSAGE,
           });
           return [...existingMessages, newMessageRef];
         },

@@ -4,11 +4,16 @@ import bcrypt from "bcrypt";
 import JWT from "jsonwebtoken";
 import { GraphQLUpload } from "graphql-upload";
 import aws from "aws-sdk";
+import { PubSub, withFilter } from "graphql-subscriptions";
+const pubsub = new PubSub();
+
 const s3 = new aws.S3({
   signatureVersion: "v4",
   region: "eu-central-1",
 });
 const Op = Sequelize.Op;
+
+const cookieExpiration = 1;
 
 export default function resolver() {
   const { db } = this;
@@ -154,7 +159,69 @@ export default function resolver() {
         return context.user;
       },
     },
+    RootSubscription: {
+      messageAdded: {
+        subscribe: withFilter(
+          () => pubsub.asyncIterator("messageAdded"),
+          (payload, variables, context) => {
+            if (payload.messageAdded.UserId !== context.user.id) {
+              return Chat.findOne({
+                where: {
+                  id: payload.messageAdded.ChatId,
+                },
+                include: [
+                  {
+                    model: User,
+                    required: true,
+                    through: {
+                      where: {
+                        userId: context.user.id,
+                      },
+                    },
+                  },
+                ],
+              }).then((chat) => {
+                if (chat !== null) {
+                  return true;
+                }
+                return false;
+              });
+            }
+            return false;
+          }
+        ),
+      },
+    },
     RootMutation: {
+      addMessage(root, { message }, context) {
+        logger.log({
+          level: "info",
+          message: "Message was created",
+        });
+        return Message.create({
+          ...message,
+        }).then((newMessage) => {
+          return Promise.all([
+            newMessage.setUser(context.user.id),
+            newMessage.setChat(message.chatId),
+          ]).then(() => {
+            pubsub.publish("messageAdded", { messageAdded: newMessage });
+            return newMessage;
+          });
+        });
+      },
+      logout(root, params, context) {
+        context.cookies.set("authorization", "", {
+          signed: true,
+          expires: new Date(),
+          httpOnly: true,
+          secure: false,
+          sameSite: "strict",
+        });
+        return {
+          message: true,
+        };
+      },
       signup(root, { email, password, username }, context) {
         return User.findAll({
           where: {
@@ -189,6 +256,18 @@ export default function resolver() {
                     expiresIn: "1d",
                   }
                 );
+                const expirationDate = new Date();
+                expirationDate.setDate(
+                  expirationDate.getDate() + cookieExpiration
+                );
+
+                context.cookies.set("authorization", token, {
+                  signed: true,
+                  expires: expirationDate,
+                  httpOnly: true,
+                  secure: false,
+                  sameSite: "strict",
+                });
                 return {
                   token,
                 };
@@ -220,6 +299,16 @@ export default function resolver() {
                 expiresIn: "1d",
               }
             );
+            const expirationDate = new Date();
+            expirationDate.setDate(expirationDate.getDate() + cookieExpiration);
+
+            context.cookies.set("authorization", token, {
+              signed: true,
+              expires: expirationDate,
+              httpOnly: true,
+              secure: false,
+              sameSite: "strict",
+            });
 
             return {
               token,
@@ -237,26 +326,6 @@ export default function resolver() {
               message: "Chat was created",
             });
             return newChat;
-          });
-        });
-      },
-      addMessage(root, { message }, context) {
-        return User.findAll().then((users) => {
-          const usersRow = users[0];
-
-          return Message.create({
-            ...message,
-          }).then((newMessage) => {
-            return Promise.all([
-              newMessage.setUser(usersRow.id),
-              newMessage.setChat(message.chatId),
-            ]).then(() => {
-              logger.log({
-                level: "info",
-                message: "Message was created",
-              });
-              return newMessage;
-            });
           });
         });
       },

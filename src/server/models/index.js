@@ -1,7 +1,4 @@
 import Sequelize from "sequelize";
-import fs from "fs";
-import path from "path";
-
 if (process.env.NODE_ENV === "development") {
   require("babel-plugin-require-context-hook/register")();
 }
@@ -9,13 +6,17 @@ if (process.env.NODE_ENV === "development") {
 export default (sequelize) => {
   let db = {};
 
-  const modelsDir = path.join(__dirname, ".");
-  const modelFiles = fs.readdirSync(modelsDir);
-
-  modelFiles
-    .filter((file) => file !== "index.js" && file.endsWith(".js"))
-    .forEach((file) => {
-      const model = require(path.join(modelsDir, file))(sequelize, Sequelize);
+  const context = require.context(
+    ".",
+    true,
+    /^\.\/(?!index\.js).*\.js$/,
+    "sync"
+  );
+  context
+    .keys()
+    .map(context)
+    .forEach((module) => {
+      const model = module(sequelize, Sequelize);
       db[model.name] = model;
     });
 

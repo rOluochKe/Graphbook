@@ -2,7 +2,6 @@ const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const { CleanWebpackPlugin } = require("clean-webpack-plugin");
 const buildDirectory = "dist";
-const outputDirectory = buildDirectory + "/client";
 
 module.exports = {
   mode: "development",

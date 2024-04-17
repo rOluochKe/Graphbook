@@ -1,6 +1,7 @@
 import React from "react";
 import {
-  BrowserRouter as Router,
+  BrowserRouter,
+  StaticRouter,
   Route,
   Redirect,
   Switch,
@@ -9,9 +10,16 @@ import LoginRegisterForm from "./components/loginregister";
 import Main from "./Main";
 import User from "./User";
 
-export const routing = ({ changeLoginState, loggedIn }) => {
+let Router;
+if (typeof window !== typeof undefined) {
+  Router = BrowserRouter;
+} else {
+  Router = StaticRouter;
+}
+
+export const routing = ({ changeLoginState, loggedIn, context, location }) => {
   return (
-    <Router>
+    <Router context={context} location={location}>
       <Switch>
         <PrivateRoute
           path="/app"

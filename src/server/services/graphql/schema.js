@@ -77,13 +77,13 @@ const typeDefinitions = `
   type RootMutation {
     addPost (
       post: PostInput!
-    ): Post
+    ): Post @auth
     addChat (
       chat: ChatInput!
-    ): Chat
+    ): Chat @auth
     addMessage (
       message: MessageInput!
-    ): Message
+    ): Message @auth
     deletePost (
       postId: Int!
     ): Response
@@ -99,11 +99,17 @@ const typeDefinitions = `
     uploadAvatar (
       file: Upload!
     ): File @auth
+    logout: Response @auth
+  }
+
+  type RootSubscription {
+    messageAdded: Message
   }
 
   schema {
     query: RootQuery
     mutation: RootMutation
+    subscription: RootSubscription
   }
 `;
 

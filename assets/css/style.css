@@ -474,3 +474,7 @@ button.uploadAvatar {
   border: none;
   border-radius: 5px;
 }
+
+.Toastify__toast-container--top-left {
+  top: 4em !important;
+}

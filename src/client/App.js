@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { Helmet } from "react-helmet";
 import { useCurrentUserQuery } from "./apollo/queries/currentUserQuery";
-import Loading from "./components/loading";
 import { withApollo } from "@apollo/client/react/hoc";
 import Router from "./router";
 import "./components/fontawesome";
 import "../../assets/css/style.css";
 import "cropperjs/dist/cropper.css";
+import "react-toastify/dist/ReactToastify.css";
 
 const App = ({ client }) => {
-  const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem("jwt"));
+  const [loggedIn, setLoggedIn] = useState(
+    typeof window.__APOLLO_STATE__ !== typeof undefined &&
+      typeof window.__APOLLO_STATE__.ROOT_QUERY !== typeof undefined &&
+      typeof window.__APOLLO_STATE__.ROOT_QUERY.currentUser !== typeof undefined
+  );
   const { data, error, loading, refetch } = useCurrentUserQuery();
 
   const handleLogin = (status) => {
@@ -32,10 +36,6 @@ const App = ({ client }) => {
       unsubscribe();
     };
   }, []);
-
-  if (loading) {
-    return <Loading />;
-  }
 
   return (
     <div className="container">

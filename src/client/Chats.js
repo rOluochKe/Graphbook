@@ -1,33 +1,86 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Chat from "./Chat";
 import Loading from "./components/loading";
 import Error from "./components/loading";
 import { useGetChatsQuery } from "./apollo/queries/getChats";
+import { MESSAGES_SUBSCRIPTION } from "./apollo/queries/messageAdded";
+import { NEW_MESSAGE } from "./apollo/mutations/addMessage";
+import { GET_CHAT } from "./apollo/queries/getChat";
+import { ToastContainer, toast } from "react-toastify";
+import { useMessageAddedSubscription } from "./apollo/subscriptions/messageAdded";
+import { withApollo } from "@apollo/client/react/hoc";
+import { UserConsumer } from "./components/context/user";
+import ChatItem from "./components/chat/item";
 
-const usernamesToString = (users) => {
-  const userList = users.slice(1);
-  var usernamesString = "";
-
-  for (var i = 0; i < userList.length; i++) {
-    usernamesString += userList[i].username;
-    if (i - 1 === userList.length) {
-      usernamesString += ", ";
-    }
-  }
-  return usernamesString;
-};
-
-const shorten = (text) => {
-  if (text.length > 12) {
-    return text.substring(0, text.length - 9) + "...";
-  }
-
-  return text;
-};
-
-const Chats = () => {
-  const { loading, error, data } = useGetChatsQuery();
+const Chats = ({ client, user }) => {
+  const { loading, error, data, subscribeToMore } = useGetChatsQuery();
   const [openChats, setOpenChats] = useState([]);
+
+  useMessageAddedSubscription({
+    onSubscriptionData: (data) => {
+      if (
+        data &&
+        data.subscriptionData &&
+        data.subscriptionData.data &&
+        data.subscriptionData.data.messageAdded
+      )
+        toast(data.subscriptionData.data.messageAdded.text, {
+          position: toast.POSITION.TOP_LEFT,
+        });
+    },
+  });
+
+  const subscribeToNewMessages = () => {
+    subscribeToMore({
+      document: MESSAGES_SUBSCRIPTION,
+      updateQuery: (prev, { subscriptionData }) => {
+        if (!subscriptionData.data || !prev.chats || !prev.chats.length)
+          return prev;
+
+        var index = -1;
+        for (var i = 0; i < prev.chats.length; i++) {
+          if (prev.chats[i].id == subscriptionData.data.messageAdded.chat.id) {
+            index = i;
+            break;
+          }
+        }
+
+        if (index === -1) return prev;
+
+        const newValue = Object.assign({}, prev.chats[i], {
+          lastMessage: {
+            text: subscriptionData.data.messageAdded.text,
+            __typename: subscriptionData.data.messageAdded.__typename,
+          },
+        });
+
+        if (user.id !== subscriptionData.data.messageAdded.user.id) {
+          try {
+            const data = client.readQuery({
+              query: GET_CHAT,
+              variables: { chatId: subscriptionData.data.messageAdded.chat.id },
+            });
+            client.cache.modify({
+              id: client.cache.identify(data.chat),
+              fields: {
+                messages(existingMessages = []) {
+                  const newMessageRef = client.cache.writeFragment({
+                    data: subscriptionData.data.messageAdded,
+                    fragment: NEW_MESSAGE,
+                  });
+                  return [...existingMessages, newMessageRef];
+                },
+              },
+            });
+          } catch (e) {}
+        }
+
+        var newList = { chats: [...prev.chats] };
+        newList.chats[i] = newValue;
+        return newList;
+      },
+    });
+  };
 
   const openChat = (id) => {
     var openChatsTemp = openChats.slice();
@@ -41,6 +94,10 @@ const Chats = () => {
 
     setOpenChats(openChatsTemp);
   };
+
+  useEffect(() => {
+    subscribeToNewMessages();
+  }, []);
 
   const closeChat = (id) => {
     var openChatsTemp = openChats.slice();
@@ -63,23 +120,15 @@ const Chats = () => {
 
   return (
     <div className="wrapper">
+      <ToastContainer />
       <div className="chats">
         {chats.map((chat, i) => (
-          <div key={chat.id} className="chat" onClick={() => openChat(chat.id)}>
-            <div className="header">
-              <img
-                src={
-                  chat.users.length > 2
-                    ? "/public/group.png"
-                    : chat.users[1].avatar
-                }
-              />
-              <div>
-                <h2>{shorten(usernamesToString(chat.users))}</h2>
-                <span>{chat?.lastMessage?.text}</span>
-              </div>
-            </div>
-          </div>
+          <ChatItem
+            key={"chatItem" + chat.id}
+            chat={chat}
+            user={user}
+            openChat={openChat}
+          />
         ))}
       </div>
       <div className="openChats">
@@ -95,4 +144,10 @@ const Chats = () => {
   );
 };
 
-export default Chats;
+const ChatContainer = (props) => (
+  <UserConsumer>
+    <Chats {...props} />
+  </UserConsumer>
+);
+
+export default withApollo(ChatContainer);

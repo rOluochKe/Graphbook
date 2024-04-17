@@ -11,7 +11,6 @@ const UPLOAD_AVATAR = gql`
 
 export const getUploadAvatarConfig = () => ({
   update(cache, { data: { uploadAvatar } }) {
-    console.log(uploadAvatar);
     if (uploadAvatar && uploadAvatar.url) {
       cache.modify({
         fields: {

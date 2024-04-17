@@ -55,9 +55,9 @@ const RegisterForm = ({ changeLoginState }) => {
   const onSubmit = (event) => {
     event.preventDefault();
     signup({
-      update(cache, { data: { signup } }) {
-        if (signup.token) {
-          localStorage.setItem("jwt", signup.token);
+      update(cache, { data: { login } }) {
+        if (login.token) {
+          localStorage.setItem("jwt", login.token);
           changeLoginState(true);
         }
       },
